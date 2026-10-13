@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#16833b">
+<title>Cupcake Snake</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #16833b; color: #fff;
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    display: flex; justify-content: center; padding: 16px;
+    touch-action: manipulation;
+  }
+  main { width: min(100%, 520px); text-align: center; }
+  h1 { margin: 4px 0 2px; font-size: clamp(1.7rem, 7vw, 2.4rem); }
+  .subtitle { margin: 0 0 12px; opacity: .95; }
+  .scorebar { display:flex; justify-content:space-between; gap:8px; margin: 10px 0; font-weight:700; }
+  .scorebox { background:#0b5425; border:1px solid #ffffff50; border-radius:12px; padding:9px 12px; flex:1; }
+  canvas { display:block; width:100%; aspect-ratio:1/1; background:#63bd62; border:4px solid #fff; border-radius:12px; box-shadow:0 8px 18px #003d1c55; }
+  .status { min-height: 28px; margin: 10px 0; font-weight:700; }
+  button { border:0; border-radius:12px; font-size:1rem; font-weight:800; padding:12px 16px; cursor:pointer; }
+  .primary { background:#ff4db8; color:#251020; box-shadow:0 3px 0 #a51b70; }
+  .controls { display:grid; grid-template-columns:repeat(3, minmax(60px, 84px)); grid-template-rows:repeat(2, 56px); gap:8px; justify-content:center; margin:10px auto; }
+  .controls button { background:#f5f5f5; color:#172217; font-size:1.45rem; padding:0; touch-action:manipulation; }
+  .controls .up { grid-column:2; grid-row:1; }
+  .controls .left { grid-column:1; grid-row:2; }
+  .controls .down { grid-column:2; grid-row:2; }
+  .controls .right { grid-column:3; grid-row:2; }
+  .help { font-size:.9rem; line-height:1.45; margin:10px auto 0; max-width:440px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🧁 Cupcake Snake 🐍</h1>
+  <p class="subtitle">Eat cupcakes. Grow your snake. Beat your best score!</p>
+  <div class="scorebar">
+    <div class="scorebox">Score: <span id="score">0</span></div>
+    <div class="scorebox">High score: <span id="high">0</span></div>
+  </div>
+  <canvas id="game" width="480" height="480" aria-label="Cupcake Snake game"></canvas>
+  <div class="status" id="status">Tap Start Game to play.</div>
+  <button class="primary" id="start">▶ Start Game</button>
+  <div class="controls" aria-label="Touch controls">
+    <button class="up" data-dir="up" aria-label="Up">▲</button>
+    <button class="left" data-dir="left" aria-label="Left">◀</button>
+    <button class="down" data-dir="down" aria-label="Down">▼</button>
+    <button class="right" data-dir="right" aria-label="Right">▶</button>
+  </div>
+  <p class="help">Use the arrow buttons or swipe on the game board. Eat the pink cupcake to earn 10 points and grow. The snake wraps around the edges. Avoid hitting your own body!</p>
+</main>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const highEl = document.getElementById('high');
+  const statusEl = document.getElementById('status');
+  const startBtn = document.getElementById('start');
+  const cells = 24, cell = canvas.width / cells;
+  let snake, direction, nextDirection, cupcake, score, high, running, timer;
+  high = Number(localStorage.getItem('cupcakeSnakeHigh') || 0);
+  highEl.textContent = high;
+
+  function randomCell() { return {x: Math.floor(Math.random()*cells), y: Math.floor(Math.random()*cells)}; }
+  function placeCupcake() {
+    let p;
+    do { p = randomCell(); } while (snake.some(s => s.x===p.x && s.y===p.y));
+    cupcake = p;
+  }
+  function reset() {
+    snake = [{x:12,y:12},{x:11,y:12},{x:10,y:12}];
+    direction = 'right'; nextDirection = 'right'; score = 0;
+    scoreEl.textContent = score; placeCupcake();
+  }
+  function drawCupcake(x,y) {
+    const px=x*cell, py=y*cell;
+    ctx.font = `${Math.floor(cell*.88)}px system-ui, sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🧁', px+cell/2, py+cell/2+1);
+  }
+  function draw() {
+    ctx.fillStyle = '#63bd62'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = '#ffffff12'; ctx.lineWidth=1;
+    for(let i=0;i<=cells;i++){ctx.beginPath();ctx.moveTo(i*cell,0);ctx.lineTo(i*cell,canvas.height);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*cell);ctx.lineTo(canvas.width,i*cell);ctx.stroke();}
+    drawCupcake(cupcake.x,cupcake.y);
+    snake.forEach((part,i)=>{
+      ctx.fillStyle = i===0 ? '#111111' : '#777777';
+      ctx.fillRect(part.x*cell+1.5,part.y*cell+1.5,cell-3,cell-3);
+      if(i===0){
+        ctx.fillStyle='#fff';
+        const eyeX = direction==='left'?part.x*cell+4:direction==='right'?part.x*cell+cell-7:part.x*cell+cell/2;
+        const eyeY1 = direction==='up'?part.y*cell+4:direction==='down'?part.y*cell+cell-7:part.y*cell+5;
+        ctx.beginPath();ctx.arc(eyeX,eyeY1,2,0,Math.PI*2);ctx.fill();
+      }
+    });
+    if(!running) {
+      ctx.fillStyle='#06250dcc'; ctx.fillRect(0,canvas.height/2-36,canvas.width,72);
+      ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font='bold 22px system-ui, sans-serif';
+      ctx.fillText(score===0?'CUPCAKE SNAKE':'GAME OVER',canvas.width/2,canvas.height/2-8);
+      ctx.font='14px system-ui, sans-serif';
+      ctx.fillText(score===0?'Press Start Game':'Tap Play Again to try again',canvas.width/2,canvas.height/2+19);
+    }
+  }
+  function tick() {
+    if(!running) return;
+    direction = nextDirection;
+    const head = {...snake[0]};
+    if(direction==='up') head.y--;
+    if(direction==='down') head.y++;
+    if(direction==='left') head.x--;
+    if(direction==='right') head.x++;
+    head.x=(head.x+cells)%cells; head.y=(head.y+cells)%cells;
+    const eating = head.x===cupcake.x && head.y===cupcake.y;
+    const bodyToCheck = eating ? snake : snake.slice(0,-1);
+    if(bodyToCheck.some(p=>p.x===head.x && p.y===head.y)) {
+      running=false; clearInterval(timer); statusEl.textContent='Oops! Your snake bumped into itself. Try again!';
+      startBtn.textContent='↻ Play Again'; draw(); return;
+    }
+    snake.unshift(head);
+    if(eating) {
+      score+=10; scoreEl.textContent=score;
+      if(score>high){high=score;highEl.textContent=high;localStorage.setItem('cupcakeSnakeHigh',String(high));}
+      placeCupcake();
+    } else snake.pop();
+    draw();
+  }
+  function setDirection(d) {
+    if(!running) return;
+    const opposite={up:'down',down:'up',left:'right',right:'left'};
+    if(opposite[d]!==direction) nextDirection=d;
+  }
+  document.querySelectorAll('[data-dir]').forEach(b=>b.addEventListener('click',()=>setDirection(b.dataset.dir)));
+  startBtn.addEventListener('click',()=>{
+    clearInterval(timer); reset(); running=true;
+    statusEl.textContent='Good luck! Eat the cupcakes!';
+    startBtn.textContent='↻ Restart Game'; draw(); timer=setInterval(tick,125);
+  });
+  document.addEventListener('keydown',e=>{
+    const map={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
+    if(map[e.key]){e.preventDefault();setDirection(map[e.key]);}
+  });
+  let touchX=0,touchY=0;
+  canvas.addEventListener('touchstart',e=>{touchX=e.changedTouches[0].clientX;touchY=e.changedTouches[0].clientY;},{passive:true});
+  canvas.addEventListener('touchend',e=>{
+    const dx=e.changedTouches[0].clientX-touchX, dy=e.changedTouches[0].clientY-touchY;
+    if(Math.max(Math.abs(dx),Math.abs(dy))<18)return;
+    setDirection(Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up'));
+  },{passive:true});
+  reset(); running=false; draw();
+})();
+</script>
+</body>
+</html>
